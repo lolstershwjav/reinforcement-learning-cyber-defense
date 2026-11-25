@@ -1,0 +1,98 @@
+<!doctype html><html lang="en"><head><meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1">
+<title>Defense Policy Replay</title>
+<style>
+:root{color-scheme:dark;background:#101923;color:#edf4fa;font:16px system-ui}
+*{box-sizing:border-box}main{max-width:1100px;margin:auto;padding:38px 22px}h1{font-size:clamp(2.2rem,5vw,3.9rem);letter-spacing:-.055em;margin:0}
+p,label{color:#aec2d3}.toolbar,.panel{border:1px solid #34495f;border-radius:12px;background:#172636;padding:14px;margin:14px 0}
+.toolbar{display:flex;flex-wrap:wrap;gap:14px;align-items:center}label{font-size:.9rem}button,select{font:inherit;background:#0d1924;color:#edf4fa;border:1px solid #42617d;padding:9px;border-radius:6px}
+select{display:block}input[type=range]{width:min(100%,340px)}h2{margin:0 0 10px;font-size:1rem}
+.assets{display:grid;grid-template-columns:repeat(3,1fr);gap:10px}.service{border:1px solid #415872;padding:11px;border-radius:9px;background:#1c2e40}
+.service small{display:block;color:#bfd0dd;margin-top:.3rem} .isolated{border-color:#e8bc7b}.active{border-color:#f1928a}.caption{font-size:.88rem}
+canvas{width:100%;height:280px;display:block}#action{font-size:1rem;margin:0 0 12px}
+@media(max-width:650px){.assets{grid-template-columns:1fr 1fr}main{padding:23px 14px}}
+</style></head><body><main>
+<h1>Defense Policy Replay</h1><p>Response decisions on paired simulated incident episodes</p>
+<div class="toolbar">
+<label>Scenario<select id="scenario"></select></label>
+<label>Policy<select id="policy"></select></label>
+<label>Decision <span id="tick"></span><input type="range" min="0" id="timeline"></label>
+<button type="button" id="play">Play</button>
+</div>
+<section class="panel"><h2>Service states</h2><p id="action" aria-live="polite"></p><div class="assets" id="services"></div></section>
+<section class="panel"><h2>Episode outcomes</h2><p class="caption">Weighted exposure <span style="color:#f6a691">●</span> · Availability <span style="color:#79d6b7">●</span> · Cumulative penalty <span style="color:#99baf2">●</span></p>
+<canvas id="chart" role="img" aria-label="Exposure, availability and normalized cumulative penalty by step"></canvas>
+<p class="caption" id="total"></p></section>
+</main>
+<script type="application/json" id="data">__EPISODE_DATA__</script>
+<script>
+const traces=JSON.parse(document.getElementById('data').textContent)
+const $=id=>document.getElementById(id)
+const sectors=['Gateway','Identity','Data store','API','Worker','Monitoring']
+const names={wait:'Wait only',alert_rule:'Alert threshold rule',inspect_rule:'Inspect and respond',
+  oracle:'Latent-state oracle',dqn:'DQN',ppo:'PPO',ppo_security:'PPO · security weight',
+  ppo_availability:'PPO · availability weight',ppo_no_inspection:'PPO · no inspection feedback',
+  ppo_masked:'PPO · state-based action mask',ppo_masked_prior:'Masked PPO · rule initialization', imitation_only:'Rule imitation only'}
+const cases={iid:'Independent incidents',bursty:'Incident bursts',shifted:'Shifted incident and alert mix'}
+let timer=null,current=null
+function options(control,values,labels){
+  const before=control.value
+  control.replaceChildren(...values.map(v=>new Option(labels[v],v)))
+  if(values.includes(before)) control.value=before
+}
+options($('scenario'),[...new Set(traces.map(r=>r.scenario))],cases)
+function update(){
+  const matches=traces.filter(r=>r.scenario===$('scenario').value)
+  options($('policy'),matches.map(r=>r.model),names)
+  current=matches.find(r=>r.model===$('policy').value)
+  $('timeline').max=current.timeline.length-1
+  draw()
+}
+function pct(n){return (100*n).toFixed(1)+'%'}
+function draw(){
+  const t=Number($('timeline').value), series=current.timeline
+  const state=series[t]
+  $('tick').textContent=t+1
+  $('action').textContent=state.action+(state.service?' · '+state.service:'')+' · Reward '+state.reward.toFixed(3)
+  $('services').replaceChildren(...sectors.map((name,i)=>{
+    const card=document.createElement('div'), info=document.createElement('small')
+    card.className='service'+(state.isolated[i]?' isolated':state.active[i]?' active':'')
+    card.append(name)
+    info.textContent=(state.isolated[i]?'Isolated':state.active[i]?'Active incident':'No active incident')
+      +' · '+pct(state.availability[i])+' available'
+    card.append(info)
+    return card
+  }))
+  const canvas=$('chart'), ctx=canvas.getContext('2d'), width=canvas.clientWidth,height=canvas.clientHeight
+  const scale=window.devicePixelRatio||1
+  canvas.width=width*scale;canvas.height=height*scale;ctx.scale(scale,scale)
+  const x=i=>35+(width-48)*i/(series.length-1), y=r=>height-27-(height-44)*r
+  ctx.font='11px system-ui'
+  for(let i=0;i<=4;i++){
+    const h=y(i/4);ctx.strokeStyle='#334d60';ctx.beginPath();ctx.moveTo(35,h);ctx.lineTo(width-13,h);ctx.stroke()
+    ctx.fillStyle='#a8b9c8';ctx.fillText((i*25)+'%',1,h+4)
+  }
+  let sum=0
+  const penalties=series.map(r=>sum-=r.reward)
+  function chart(values,color){
+    ctx.strokeStyle=color;ctx.lineWidth=2;ctx.beginPath()
+    values.forEach((v,i)=>i?ctx.lineTo(x(i),y(v)):ctx.moveTo(x(i),y(v)))
+    ctx.stroke()
+  }
+  chart(series.map(r=>r.exposure),'#f6a691')
+  chart(series.map(r=>1-r.outage),'#79d6b7')
+  chart(penalties.map(p=>p/Math.max(sum,.001)),'#99baf2')
+  ctx.strokeStyle='#dfe9f0';ctx.lineWidth=1;ctx.beginPath();ctx.moveTo(x(t),14);ctx.lineTo(x(t),height-25);ctx.stroke()
+  $('total').textContent='Episode '+current.episode_seed+' · cumulative penalty through selected step '+penalties[t].toFixed(2)
+}
+for(const item of ['scenario','policy'])$(item).addEventListener('change',update)
+$('timeline').addEventListener('input',draw)
+$('play').addEventListener('click',()=>{
+  if(timer!==null){clearInterval(timer);timer=null;$('play').textContent='Play';return}
+  $('play').textContent='Pause'
+  timer=setInterval(()=>{$('timeline').value=(Number($('timeline').value)+1)%current.timeline.length;draw()},220)
+})
+window.addEventListener('resize',draw)
+$('policy').add(new Option('Masked PPO · rule initialization','ppo_masked_prior'))
+$('timeline').value=0
+update()
+</script></body></html>

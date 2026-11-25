@@ -1,0 +1,23 @@
+[build-system]
+requires = ["setuptools>=69"]
+build-backend = "setuptools.build_meta"
+
+[project]
+name = "reinforcement-learning-cyber-defense"
+version = "0.1.0"
+description = "Closed simulation of defensive response, cost and service availability"
+readme = "README.md"
+requires-python = ">=3.11"
+dependencies = [
+  "numpy==2.3.5",
+  "gymnasium==1.2.3",
+  "torch==2.15.0",
+  "stable-baselines3==2.7.1",
+  "sb3-contrib==2.7.1",
+]
+
+[project.optional-dependencies]
+report = ["matplotlib==3.10.8", "reportlab==4.4.9"]
+
+[tool.setuptools.packages.find]
+include = ["defense_sim*"]

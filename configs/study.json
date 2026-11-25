@@ -1,0 +1,12 @@
+{
+  "train_seeds": [11, 37, 67],
+  "test_seed_start": 700,
+  "test_episodes_per_scenario": 40,
+  "horizon": 64,
+  "checkpoints": [4096, 8192, 16384],
+  "rewards": {
+    "balanced": [2.4, 1.0, 0.20],
+    "security": [4.5, 0.65, 0.15],
+    "availability": [1.6, 2.5, 0.25]
+  }
+}
